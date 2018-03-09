@@ -1,6 +1,8 @@
 import Test.Tasty
 import Test.Tasty.HUnit
 
+import Galley.API.Create
+
 main :: IO ()
 main = defaultMain $
     testCase "Example test case" $ do

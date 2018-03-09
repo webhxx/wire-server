@@ -6,12 +6,14 @@
 
 module Galley.Intra.Push
     ( -- * Push
-      Push
+      FindBetterName (..)
+      
+    , Push
     , newPush
     , newPush1
     , push
-    , push1
-    , pushSome
+    --, push1
+    --, pushSome
 
     , PushEvent (..)
 
@@ -122,14 +124,22 @@ newPush :: UserId -> PushEvent -> [Recipient] -> Maybe Push
 newPush _ _ []     = Nothing
 newPush u e (r:rr) = Just $ newPush1 u e (list1 r rr)
 
+class FindBetterName m where
+    push1 :: Push -> m ()
+    pushSome :: [Push] -> m ()
+
+instance FindBetterName Galley where
+    push1 = realPush1
+    pushSome = realPushSome
+
 -- | Asynchronously send a single push, chunking it into multiple
 -- requests if there are more than 128 recipients.
-push1 :: Push -> Galley ()
-push1 p = push (list1 p [])
+realPush1 :: Push -> Galley ()
+realPush1 p = push (list1 p [])
 
-pushSome :: [Push] -> Galley ()
-pushSome []     = return ()
-pushSome (x:xs) = push (list1 x xs)
+realPushSome :: [Push] -> Galley ()
+realPushSome []     = return ()
+realPushSome (x:xs) = push (list1 x xs)
 
 -- | Asynchronously send multiple pushes, aggregating them into as
 -- few requests as possible, such that no single request targets

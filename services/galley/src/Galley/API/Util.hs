@@ -35,7 +35,9 @@ import qualified Galley.Data    as Data
 
 type JSON = Media "application" "json"
 
-ensureAccessRole :: AccessRole -> [UserId] -> Maybe [TeamMember] -> Galley ()
+ensureAccessRole :: (MonadThrow m, RefactorLater m) =>
+                    AccessRole -> [UserId] -> Maybe [TeamMember] ->
+                    m ()
 ensureAccessRole role users mbTms = case role of
     PrivateAccessRole -> throwM accessDenied
     TeamAccessRole -> case mbTms of
@@ -48,7 +50,8 @@ ensureAccessRole role users mbTms = case role of
         when (length activated /= length users) $ throwM accessDenied
     NonActivatedAccessRole -> return ()
 
-ensureConnected :: UserId -> [UserId] -> Galley ()
+ensureConnected :: (RefactorLater m, MonadThrow m) =>
+                   UserId -> [UserId] -> m ()
 ensureConnected _ []   = pure ()
 ensureConnected u uids = do
     conns <- getConnections u uids (Just Accepted)
@@ -78,7 +81,10 @@ bindingTeamMembers tid = do
         Binding -> Data.teamMembers tid
         NonBinding -> throwM nonBindingTeam
 
-permissionCheck :: Foldable m => UserId -> Perm -> m TeamMember -> Galley TeamMember
+-- TODO: Monad not really needed here
+permissionCheck :: (Monad m, Foldable f, MonadThrow m) =>
+                   UserId -> Perm -> f TeamMember ->
+                   m TeamMember
 permissionCheck u p t =
     case find ((u ==) . view userId) t of
         Just m -> do

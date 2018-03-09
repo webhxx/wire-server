@@ -8,6 +8,8 @@ module Galley.API.Create
     , createSelfConversation
     , createOne2OneConversation
     , createConnectConversation
+
+    , createTeamConv
     ) where
 
 import Control.Lens hiding ((??))
@@ -27,6 +29,8 @@ import Galley.App
 import Galley.API.Error
 import Galley.API.Mapping
 import Galley.API.Util
+import Galley.Data (AlsoRefactorLater)
+import Galley.Intra.User (RefactorLater)
 import Galley.Intra.Push
 import Galley.Types
 import Galley.Types.Teams hiding (EventType (..))
@@ -47,45 +51,57 @@ createGroupConversation :: UserId ::: ConnId ::: Request ::: JSON -> Galley Resp
 createGroupConversation (zusr::: zcon ::: req ::: _) = do
     body <- fromBody req invalidPayload
     case newConvTeam body of
-        Nothing -> createRegularConv body
-        Just tm -> createTeamConv tm body
-  where
-    createTeamConv tinfo body = do
-        name <- rangeCheckedMaybe (newConvName body)
-        mems <- Data.teamMembers (cnvTeamId tinfo)
-        ensureAccessRole (accessRole body) (newConvUsers body) (Just mems)
-        void $ permissionCheck zusr CreateConversation mems
-        uids <-
-            if cnvManaged tinfo then do
-                let uu = filter (/= zusr) $ map (view userId) mems
-                checkedConvAndTeamSize uu
-            else do
-                void $ permissionCheck zusr AddConversationMember mems
-                uu <- checkedConvAndTeamSize (newConvUsers body)
-                ensureConnected zusr (notTeamMember (fromConvTeamSize uu) mems)
-                pure uu
-        conv <- Data.createConversation zusr name (access body) (accessRole body) uids (newConvTeam body)
-        now  <- liftIO getCurrentTime
-        let d = Teams.EdConvCreate (Data.convId conv)
-        let e = newEvent Teams.ConvCreate (cnvTeamId tinfo) now & eventData .~ Just d
-        let notInConv = Set.fromList (map (view userId) mems) \\ Set.fromList (zusr : fromConvTeamSize uids)
-        for_ (newPush zusr (TeamEvent e) (map userRecipient (Set.toList notInConv))) push1
-        notifyCreatedConversation (Just now) zusr (Just zcon) conv
-        conversationResponse status201 zusr conv
+        Nothing -> createRegularConv zusr zcon body
+        Just tm -> createTeamConv zusr zcon tm body
 
-    createRegularConv body = do
-        name <- rangeCheckedMaybe (newConvName body)
-        uids <- checkedConvAndTeamSize (newConvUsers body)
-        ensureConnected zusr (fromConvTeamSize uids)
-        c <- Data.createConversation zusr name (access body) (accessRole body) uids (newConvTeam body)
-        notifyCreatedConversation Nothing zusr (Just zcon) c
-        conversationResponse status201 zusr c
+createTeamConv :: (MonadThrow m,
+                   RefactorLater m,
+                   AlsoRefactorLater m,
+                   FindBetterName m,
+                   HasOpts m,
+                   MonadIO m
+                  ) =>
+                  UserId -> ConnId -> ConvTeamInfo -> NewConv ->
+                  m Response
+createTeamConv zusr zcon tinfo body = do
+    name <- rangeCheckedMaybe (newConvName body)
+    mems <- undefined --Data.teamMembers (cnvTeamId tinfo)
+    ensureAccessRole (accessRole body) (newConvUsers body) (Just mems)
+    void $ permissionCheck zusr CreateConversation mems
+    uids <-
+        if cnvManaged tinfo then do
+            let uu = filter (/= zusr) $ map (view userId) mems
+            checkedConvAndTeamSize uu
+        else do
+            void $ permissionCheck zusr AddConversationMember mems
+            uu <- checkedConvAndTeamSize (newConvUsers body)
+            ensureConnected zusr (notTeamMember (fromConvTeamSize uu) mems)
+            pure uu
+    conv <- Data.createConversation zusr name (access body) (accessRole body) uids (newConvTeam body)
+    now  <- liftIO getCurrentTime
+    let d = Teams.EdConvCreate (Data.convId conv)
+    let e = newEvent Teams.ConvCreate (cnvTeamId tinfo) now & eventData .~ Just d
+    let notInConv = Set.fromList (map (view userId) mems) \\ Set.fromList (zusr : fromConvTeamSize uids)
+    for_ (newPush zusr (TeamEvent e) (map userRecipient (Set.toList notInConv))) push1
+    notifyCreatedConversation (Just now) zusr (Just zcon) conv
+    conversationResponse status201 zusr conv
 
-    accessRole b = fromMaybe Data.defRole (newConvAccessRole b)
+createRegularConv :: UserId -> ConnId -> NewConv -> Galley Response
+createRegularConv zusr zcon body = do
+    name <- rangeCheckedMaybe (newConvName body)
+    uids <- checkedConvAndTeamSize (newConvUsers body)
+    ensureConnected zusr (fromConvTeamSize uids)
+    c <- Data.createConversation zusr name (access body) (accessRole body) uids (newConvTeam body)
+    notifyCreatedConversation Nothing zusr (Just zcon) c
+    conversationResponse status201 zusr c
 
-    access a = case Set.toList (newConvAccess a) of
-        []     -> Data.defRegularConvAccess
-        (x:xs) -> x:xs
+accessRole :: NewConv -> AccessRole
+accessRole b = fromMaybe Data.defRole (newConvAccessRole b)
+
+access :: NewConv -> [Access]
+access a = case Set.toList (newConvAccess a) of
+    []     -> Data.defRegularConvAccess
+    (x:xs) -> x:xs
 
 createSelfConversation :: UserId -> Galley Response
 createSelfConversation zusr = do
@@ -175,12 +191,20 @@ createConnectConversation (usr ::: conn ::: req ::: _) = do
 -------------------------------------------------------------------------------
 -- Helpers
 
-conversationResponse :: Status -> UserId -> Data.Conversation -> Galley Response
+conversationResponse :: MonadThrow m =>
+                        Status -> UserId -> Data.Conversation ->
+                        m Response
 conversationResponse s u c = do
     a <- conversationView u c
     return $ json a & setStatus s . location (cnvId a)
 
-notifyCreatedConversation :: Maybe UTCTime -> UserId -> Maybe ConnId -> Data.Conversation -> Galley ()
+-- TODO: HasTime instead of MonadIO?
+notifyCreatedConversation :: (MonadThrow m, FindBetterName m, MonadIO m) =>
+                             Maybe UTCTime ->
+                             UserId ->
+                             Maybe ConnId ->
+                             Data.Conversation ->
+                             m ()
 notifyCreatedConversation dtime usr conn c = do
     now  <- maybe (liftIO getCurrentTime) pure dtime
     pushSome =<< mapM (toPush now) (Data.convMembers c)

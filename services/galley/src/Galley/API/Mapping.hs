@@ -18,7 +18,7 @@ import qualified Data.List           as List
 import qualified Galley.Data         as Data
 import qualified System.Logger.Class as Log
 
-conversationView :: UserId -> Data.Conversation -> Galley Conversation
+conversationView :: MonadThrow m => UserId -> Data.Conversation -> m Conversation
 conversationView u Data.Conversation{..} = do
     let mm = toList convMembers
     let (me, them) = List.partition ((u ==) . memId) mm
@@ -29,10 +29,13 @@ conversationView u Data.Conversation{..} = do
     toOther x = OtherMember (memId x) (memService x)
 
     memberNotFound = do
+        -- TODO: skipped this constraint for now
+        {-
         Log.err . msg $ val "User "
             +++ toByteString u
             +++ val " is not a member of conv "
             +++ toByteString convId
+        -}
         throwM badState
 
     badState = Error status500 "bad-state" "Bad internal member state."

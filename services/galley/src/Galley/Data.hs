@@ -33,6 +33,8 @@ module Galley.Data
     , updateTeamStatus
 
     -- * Conversations
+    , AlsoRefactorLater (..)
+
     , Conversation (..)
     , acceptConnect
     , conversation
@@ -41,7 +43,7 @@ module Galley.Data
     , conversationMeta
     , conversations
     , createConnectConversation
-    , createConversation
+    -- , createConversation
     , createOne2OneConversation
     , createSelfConversation
     , isConvAlive
@@ -349,14 +351,26 @@ conversationIdsOf :: MonadClient m => UserId -> Range 1 32 (List ConvId) -> m [C
 conversationIdsOf usr (fromList . fromRange -> cids) =
     map runIdentity <$> retry x1 (query Cql.selectUserConvsIn (params Quorum (usr, cids)))
 
-createConversation :: UserId
+class AlsoRefactorLater m where
+     createConversation :: UserId
+                        -> Maybe (Range 1 256 Text)
+                        -> [Access]
+                        -> AccessRole
+                        -> ConvAndTeamSizeChecked [UserId]
+                        -> Maybe ConvTeamInfo
+                        -> m Conversation
+
+instance AlsoRefactorLater Galley where
+    createConversation = brigCreateConversation
+
+brigCreateConversation :: UserId
                    -> Maybe (Range 1 256 Text)
                    -> [Access]
                    -> AccessRole
                    -> ConvAndTeamSizeChecked [UserId]
                    -> Maybe ConvTeamInfo
                    -> Galley Conversation
-createConversation usr name acc role others tinfo = do
+brigCreateConversation usr name acc role others tinfo = do
     conv <- Id <$> liftIO nextRandom
     now  <- liftIO getCurrentTime
     retry x5 $ case tinfo of

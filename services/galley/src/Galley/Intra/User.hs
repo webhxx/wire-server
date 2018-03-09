@@ -1,12 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Galley.Intra.User
-    ( getConnections
-    , deleteBot
+    ( --getConnections
+    deleteBot
     , reAuthUser
-    , lookupActivatedUsers
+    --, lookupActivatedUsers
     , deleteUser
     , getContactList
+
+    , RefactorLater (..)
     ) where
 
 import Bilge hiding (options, getHeader, statusCode)
@@ -30,8 +32,18 @@ import Network.Wai.Utilities.Error
 
 import qualified Network.HTTP.Client.Internal as Http
 
-getConnections :: UserId -> [UserId] -> Maybe Relation -> Galley [ConnectionStatus]
-getConnections u uids rlt = do
+
+class RefactorLater m where
+    lookupActivatedUsers :: [UserId] -> m [User]
+    getConnections :: UserId -> [UserId] -> Maybe Relation -> m [ConnectionStatus]
+
+instance RefactorLater Galley where
+    lookupActivatedUsers = brigLookupActivatedUsers
+    getConnections = brigGetConnections
+
+
+brigGetConnections :: UserId -> [UserId] -> Maybe Relation -> Galley [ConnectionStatus]
+brigGetConnections u uids rlt = do
     (h, p) <- brigReq
     r <- call "brig"
         $ method GET . host h . port p
@@ -72,8 +84,8 @@ reAuthUser uid auth = do
             in throwM $ HttpExceptionRequest rq ex
     }
 
-lookupActivatedUsers :: [UserId] -> Galley [User]
-lookupActivatedUsers uids = do
+brigLookupActivatedUsers :: [UserId] -> Galley [User]
+brigLookupActivatedUsers uids = do
     (h, p) <- brigReq
     r <- call "brig"
         $ method GET . host h . port p

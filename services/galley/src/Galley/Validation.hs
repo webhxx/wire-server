@@ -13,6 +13,9 @@ module Galley.Validation
    , ConvAndTeamSizeChecked
    , ConvMemberAddSizeChecked
 
+   -- TODO: def. shouldn't be here
+   , HasOpts (..)
+   
    , checkedConvAndTeamSize
    , checkedMemberAddSize
    ) where
@@ -26,11 +29,11 @@ import Galley.API.Error
 import Galley.App
 import Galley.Options
 
-rangeChecked :: Within a n m => a -> Galley (Range n m a)
+rangeChecked :: (MonadThrow t, Within a n m) => a -> t (Range n m a)
 rangeChecked = either throwErr return . checkedEither
 {-# INLINE rangeChecked #-}
 
-rangeCheckedMaybe :: Within a n m => Maybe a -> Galley (Maybe (Range n m a))
+rangeCheckedMaybe :: (MonadThrow t, Within a n m) => Maybe a -> t (Maybe (Range n m a))
 rangeCheckedMaybe Nothing  = return Nothing
 rangeCheckedMaybe (Just a) = Just <$> rangeChecked a
 {-# INLINE rangeCheckedMaybe #-}
@@ -40,9 +43,18 @@ newtype ConvAndTeamSizeChecked a = ConvAndTeamSizeChecked { fromConvTeamSize :: 
 -- Between 1 and setMaxConvAndTeamSize
 newtype ConvMemberAddSizeChecked a = ConvMemberAddSizeChecked { fromMemberSize :: a }
 
-checkedConvAndTeamSize :: Bounds a => a -> Galley (ConvAndTeamSizeChecked a)
+
+-- TODO: move to the right place
+class HasOpts m where
+    getOptions :: m Opts
+
+instance HasOpts Galley where
+    getOptions = view options
+
+checkedConvAndTeamSize :: (HasOpts m, MonadThrow m, Bounds a) =>
+                          a -> m (ConvAndTeamSizeChecked a)
 checkedConvAndTeamSize x = do
-    o <- view options
+    o <- getOptions
     let minV  = 0
         limit = o^.optSettings.setMaxConvAndTeamSize - 1
     if within x minV (fromIntegral limit)
@@ -59,5 +71,5 @@ checkedMemberAddSize l@(x:xs) = do
         then return (ConvMemberAddSizeChecked $ list1 x xs)
         else throwErr (errorMsg minV limit "")
 
-throwErr :: String -> Galley a
+throwErr :: (MonadThrow m) => String -> m a
 throwErr = throwM . invalidRange . fromString
