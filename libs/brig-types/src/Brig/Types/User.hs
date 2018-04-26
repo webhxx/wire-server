@@ -48,6 +48,7 @@ noPict = Pict []
 -- UserHandleInfo
 
 newtype UserHandleInfo = UserHandleInfo { userHandleId :: UserId }
+    deriving (Eq, Show)
 
 instance ToJSON UserHandleInfo where
     toJSON (UserHandleInfo u) = object
@@ -154,6 +155,7 @@ data UserProfile = UserProfile
     , profileExpire   :: !(Maybe UTCTime)
     , profileTeam     :: !(Maybe TeamId)
     }
+    deriving (Eq, Show)
 
 instance ToJSON User where
     toJSON u = object
@@ -241,6 +243,7 @@ data NewUser = NewUser
     , newUserTeam           :: !(Maybe NewTeamUser)
     , newUserExpiresIn      :: !(Maybe (Range 1 604800 Integer)) -- ^ 1 second - 1 week
     }
+    deriving (Eq, Show)
 
 newUserEmail :: NewUser -> Maybe Email
 newUserEmail = emailIdentity <=< newUserIdentity
@@ -317,6 +320,7 @@ data BindingNewTeamUser = BindingNewTeamUser
     , bnuCurrency :: !(Maybe Currency.Alpha)
     -- TODO: Remove Currency selection once billing supports currency changes after team creation
     }
+    deriving (Eq, Show)
 
 instance FromJSON BindingNewTeamUser where
     parseJSON j@(Object o) = do
@@ -333,6 +337,7 @@ instance ToJSON BindingNewTeamUser where
 
 data NewTeamUser = NewTeamMember  !InvitationCode
                  | NewTeamCreator !BindingNewTeamUser
+    deriving (Eq, Show)
 
 -----------------------------------------------------------------------------
 -- Profile Updates
@@ -342,15 +347,15 @@ data UserUpdate = UserUpdate
     , uupPict     :: !(Maybe Pict) -- DEPRECATED
     , uupAssets   :: !(Maybe [Asset])
     , uupAccentId :: !(Maybe ColourId)
-    } deriving Eq
+    } deriving (Eq, Show)
 
-newtype LocaleUpdate = LocaleUpdate { luLocale :: Locale } deriving Eq
+newtype LocaleUpdate = LocaleUpdate { luLocale :: Locale } deriving (Eq, Show)
 
-newtype EmailUpdate  = EmailUpdate  { euEmail  :: Email  }
-newtype PhoneUpdate  = PhoneUpdate  { puPhone  :: Phone  }
-newtype HandleUpdate = HandleUpdate { huHandle :: Text   }
-newtype EmailRemove  = EmailRemove  { erEmail  :: Email  }
-newtype PhoneRemove  = PhoneRemove  { prPhone  :: Phone  }
+newtype EmailUpdate  = EmailUpdate  { euEmail  :: Email  } deriving (Eq, Show)
+newtype PhoneUpdate  = PhoneUpdate  { puPhone  :: Phone  } deriving (Eq, Show)
+newtype HandleUpdate = HandleUpdate { huHandle :: Text   } deriving (Eq, Show)
+newtype EmailRemove  = EmailRemove  { erEmail  :: Email  } deriving (Eq, Show)
+newtype PhoneRemove  = PhoneRemove  { prPhone  :: Phone  } deriving (Eq, Show)
 
 instance FromJSON UserUpdate where
     parseJSON = withObject "UserUpdate" $ \o ->
@@ -416,6 +421,7 @@ instance ToJSON PhoneRemove where
 newtype DeleteUser = DeleteUser
     { deleteUserPassword :: Maybe PlainTextPassword
     }
+    deriving (Eq, Show)
 
 mkDeleteUser :: Maybe PlainTextPassword -> DeleteUser
 mkDeleteUser = DeleteUser
@@ -424,7 +430,7 @@ mkDeleteUser = DeleteUser
 data VerifyDeleteUser = VerifyDeleteUser
     { verifyDeleteUserKey  :: !Code.Key
     , verifyDeleteUserCode :: !Code.Value
-    } deriving Eq
+    } deriving (Eq, Show)
 
 mkVerifyDeleteUser :: Code.Key -> Code.Value -> VerifyDeleteUser
 mkVerifyDeleteUser = VerifyDeleteUser
@@ -466,6 +472,7 @@ instance ToJSON DeletionCodeTimeout where
 
 -- | The payload for initiating a password reset.
 newtype NewPasswordReset = NewPasswordReset (Either Email Phone)
+    deriving (Eq, Show)
 
 -- | Opaque identifier per user (SHA256 of the user ID).
 newtype PasswordResetKey = PasswordResetKey
@@ -475,7 +482,7 @@ newtype PasswordResetKey = PasswordResetKey
 -- | Random code, acting as a very short-lived, single-use password.
 newtype PasswordResetCode = PasswordResetCode
     { fromPasswordResetCode :: AsciiBase64Url }
-    deriving (Eq, FromByteString, ToByteString, FromJSON, ToJSON)
+    deriving (Eq, Show, FromByteString, ToByteString, FromJSON, ToJSON)
 
 type PasswordResetPair = (PasswordResetKey, PasswordResetCode)
 
@@ -487,6 +494,7 @@ data PasswordResetIdentity
         -- ^ A known email address with a pending password reset.
     | PasswordResetPhoneIdentity !Phone
         -- ^ A known phone number with a pending password reset.
+    deriving (Eq, Show)
 
 -- | The payload for completing a password reset.
 data CompletePasswordReset = CompletePasswordReset
@@ -494,12 +502,14 @@ data CompletePasswordReset = CompletePasswordReset
     , cpwrCode     :: !PasswordResetCode
     , cpwrPassword :: !PlainTextPassword
     }
+    deriving (Eq, Show)
 
 -- | The payload for setting or changing a password.
 data PasswordChange = PasswordChange
     { cpOldPassword :: !(Maybe PlainTextPassword)
     , cpNewPassword :: !PlainTextPassword
     }
+    deriving (Eq, Show)
 
 instance FromJSON NewPasswordReset where
     parseJSON = withObject "NewPasswordReset" $ \o ->

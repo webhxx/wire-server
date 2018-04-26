@@ -218,9 +218,13 @@ data NewTeam a = NewTeam
     , _newTeamIconKey :: Maybe (Range 1 256 Text)
     , _newTeamMembers :: Maybe a
     }
+    deriving (Eq, Show)
 
 newtype BindingNewTeam = BindingNewTeam (NewTeam ())
+    deriving (Eq, Show)
+
 newtype NonBindingNewTeam = NonBindingNewTeam (NewTeam (Range 1 127 [TeamMember]))
+    deriving (Eq, Show)
 
 newtype NewTeamMember = NewTeamMember
     { _ntmNewTeamMember :: TeamMember

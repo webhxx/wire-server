@@ -80,6 +80,7 @@ test-suite brig-types-tests
         Test.Brig.Types.Arbitrary
         Test.Brig.Types.Common
         Test.Brig.Types.TURN
+        Test.Brig.Types.User
 
     build-depends:
         aeson
@@ -87,6 +88,8 @@ test-suite brig-types-tests
       , base
       , brig-types
       , bytestring
+      , currency-codes
+      , galley-types
       , iproute
       , lens
       , QuickCheck
