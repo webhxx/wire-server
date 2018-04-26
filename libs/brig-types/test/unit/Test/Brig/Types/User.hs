@@ -12,20 +12,12 @@
 module Test.Brig.Types.User where
 
 import Brig.Types.User
-import Control.Monad
 import Data.Aeson
-import Data.Currency
-import Data.Misc
-import Data.Monoid
-import Data.Range
 import Data.Typeable
-import Galley.Types.Teams
-import GHC.TypeLits
 import Test.Brig.Types.Arbitrary ()
 import Test.Tasty
 import Test.Tasty.QuickCheck
 
-import qualified Data.Text as ST
 
 tests :: TestTree
 tests = testGroup "User (types vs. aeson)"

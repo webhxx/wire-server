@@ -11,12 +11,15 @@
 
 module Test.Brig.Types.Arbitrary where
 
+import Brig.Types.Activation
 import Brig.Types.Code
 import Brig.Types.TURN
 import Brig.Types.User
+import Brig.Types.User.Auth
 import Control.Monad
 import Data.Aeson
 import Data.Currency
+import Data.Id
 import Data.IP
 import Data.Misc
 import Data.Monoid
@@ -25,7 +28,9 @@ import Data.Text.Ascii
 import Data.Time
 import Data.Typeable
 import Data.Word
+import Galley.Types.Bot.Service
 import Galley.Types.Teams
+import Galley.Types.Teams.Internal
 import GHC.TypeLits
 import Test.QuickCheck
 import Test.Tasty hiding (Timeout)
@@ -42,9 +47,7 @@ instance Arbitrary Octet where
     arbitrary = Octet <$> arbitrary `suchThat` (<256)
 
 instance Arbitrary Scheme where
-    arbitrary = elements [ SchemeTurn
-                         , SchemeTurns
-                         ]
+    arbitrary = genEnumBounded
 
 -- TODO: Add an arbitrary instance for IPv6
 instance Arbitrary IpAddr where
@@ -68,9 +71,7 @@ instance Arbitrary Port where
     arbitrary = Port <$> arbitrary
 
 instance Arbitrary Transport where
-    arbitrary = elements [ TransportUDP
-                         , TransportTCP
-                         ]
+    arbitrary = genEnumBounded
 
 instance Arbitrary TurnURI where
     arbitrary = turnURI <$> arbitrary
@@ -82,11 +83,11 @@ instance Arbitrary TurnURI where
 instance Arbitrary Handle where
   arbitrary = Handle . ST.pack <$> do
       let manyC n = replicateM n (elements $ ['a'..'z'] <> ['0'..'9'] <> ['_'])
-      ((<>) <$> manyC 2 <*> (manyC =<< elements [0..19]))
+      ((<>) <$> manyC 2 <*> (manyC =<< choose (0, 19)))
 
 instance Arbitrary Name where
   arbitrary = Name . ST.pack <$>
-      ((`replicateM` arbitrary) =<< elements [1..128])
+      ((`replicateM` arbitrary) =<< choose (1, 128))
 
 instance Arbitrary ColourId where
   arbitrary = ColourId <$> arbitrary
@@ -101,7 +102,7 @@ instance Arbitrary Phone where
   arbitrary = Phone . ST.pack <$> do
       let mkdigits n = replicateM n (elements ['0'..'9'])
       mini <- mkdigits 8
-      maxi <- mkdigits =<< elements [0..7]
+      maxi <- mkdigits =<< choose (0, 7)
       pure $ '+' : mini <> maxi
 
 instance Arbitrary UserIdentity where
@@ -116,7 +117,7 @@ instance Arbitrary UserSSOId where
   arbitrary = UserSSOId <$> genText
 
 instance Arbitrary AssetSize where
-  arbitrary = elements [minBound..]
+  arbitrary = genEnumBounded
 
 instance Arbitrary Asset where
   arbitrary = ImageAsset <$> genText <*> arbitrary
@@ -130,7 +131,7 @@ instance Arbitrary (NewTeam ()) where
       where txt = genRangeText @1 @256 arbitrary
 
 instance Arbitrary CheckHandles where
-    arbitrary = CheckHandles <$> genRangeList @1 @50 genText <*> (unsafeRange @Word @1 @10 <$> elements [1..10])
+    arbitrary = CheckHandles <$> genRangeList @1 @50 genText <*> (unsafeRange @Word @1 @10 <$> choose (1, 10))
 
 instance Arbitrary CompletePasswordReset where
     arbitrary = CompletePasswordReset <$> arbitrary <*> (PasswordResetCode <$> arbitrary) <*> arbitrary
@@ -158,49 +159,118 @@ instance Arbitrary Timeout where
     arbitrary = Timeout . fromIntegral <$> arbitrary @Int
 
 instance Arbitrary EmailRemove where
-    arbitrary = undefined
+    arbitrary = EmailRemove <$> arbitrary
 
 instance Arbitrary EmailUpdate where
-    arbitrary = undefined
+    arbitrary = EmailUpdate <$> arbitrary
 
 instance Arbitrary HandleUpdate where
-    arbitrary = undefined
+    arbitrary = HandleUpdate . ST.pack <$> arbitrary
 
 instance Arbitrary LocaleUpdate where
-    arbitrary = undefined
+    arbitrary = LocaleUpdate <$> arbitrary
 
 instance Arbitrary NewPasswordReset where
-    arbitrary = undefined
+    arbitrary = NewPasswordReset <$> arbitrary
 
 instance Arbitrary NewUser where
-    arbitrary = undefined
+    arbitrary = do
+        x0  <- arbitrary
+        x1  <- arbitrary
+        x2  <- pure Nothing
+        x3  <- arbitrary
+        x4  <- arbitrary
+        x5  <- genMaybe $ ActivationCode <$> arbitrary
+        x6  <- genMaybe $ ActivationCode <$> arbitrary
+        x7  <- genMaybe $ InvitationCode <$> arbitrary
+        x8  <- genMaybe $ CookieLabel . ST.pack <$> arbitrary
+        x9  <- arbitrary
+        x10 <- arbitrary
+        x11 <- arbitrary
+        x12 <- genMaybe $ unsafeRange @Integer @1 @604800 <$> choose (1, 604800)
+
+        pure NewUser
+            { newUserName           = x0  :: Name
+            , newUserIdentity       = x1  :: (Maybe UserIdentity)
+            , newUserPict           = x2  :: (Maybe Pict) -- ^ DEPRECATED
+            , newUserAssets         = x3  :: [Asset]
+            , newUserAccentId       = x4  :: (Maybe ColourId)
+            , newUserEmailCode      = x5  :: (Maybe ActivationCode)
+            , newUserPhoneCode      = x6  :: (Maybe ActivationCode)
+            , newUserInvitationCode = x7  :: (Maybe InvitationCode)
+            , newUserLabel          = x8  :: (Maybe CookieLabel)
+            , newUserLocale         = x9  :: (Maybe Locale)
+            , newUserPassword       = x10 :: (Maybe PlainTextPassword)
+            , newUserTeam           = x11 :: (Maybe NewTeamUser)
+            , newUserExpiresIn      = x12 :: (Maybe (Range 1 604800 Integer)) -- ^ 1 second - 1 week
+            }
+
+instance Arbitrary NewTeamUser where
+    arbitrary = oneof
+        [ NewTeamMember <$> arbitrary
+        , NewTeamCreator <$> arbitrary
+        ]
+
+instance Arbitrary InvitationCode where
+    arbitrary = InvitationCode <$> arbitrary
 
 instance Arbitrary PasswordChange where
-    arbitrary = undefined
+    arbitrary = PasswordChange <$> genMaybe arbitrary <*> arbitrary
 
 instance Arbitrary PhoneRemove where
-    arbitrary = undefined
+    arbitrary = PhoneRemove <$> arbitrary
 
 instance Arbitrary PhoneUpdate where
-    arbitrary = undefined
+    arbitrary = PhoneUpdate <$> arbitrary
 
 instance Arbitrary SelfProfile where
-    arbitrary = undefined
+    arbitrary = SelfProfile <$> arbitrary
 
 instance Arbitrary UserHandleInfo where
-    arbitrary = undefined
+    arbitrary = UserHandleInfo <$> arbitrary
 
 instance Arbitrary UserProfile where
-    arbitrary = undefined
+    arbitrary = do
+        x0 <- arbitrary
+        x1 <- arbitrary
+        x2 <- pure $ Pict []
+        x3 <- arbitrary
+        x4 <- arbitrary
+        x5 <- arbitrary
+        x6 <- arbitrary
+        x7 <- arbitrary
+        x8 <- arbitrary
+        x9 <- arbitrary
+        x10 <- arbitrary
+
+        pure UserProfile
+            { profileId       = x0  :: UserId
+            , profileName     = x1  :: Name
+            , profilePict     = x2  :: Pict -- ^ DEPRECATED
+            , profileAssets   = x3  :: [Asset]
+            , profileAccentId = x4  :: ColourId
+            , profileDeleted  = x5  :: Bool
+            , profileService  = x6  :: (Maybe ServiceRef)
+            , profileHandle   = x7  :: (Maybe Handle)
+            , profileLocale   = x8  :: (Maybe Locale)
+            , profileExpire   = x9  :: (Maybe UTCTime)
+            , profileTeam     = x10 :: (Maybe TeamId)
+            }
+
+instance Arbitrary ServiceRef where
+    arbitrary = _
 
 instance Arbitrary UserUpdate where
-    arbitrary = undefined
+    arbitrary = _
 
 instance Arbitrary User where
-    arbitrary = undefined
+    arbitrary = _
 
 instance Arbitrary VerifyDeleteUser where
-    arbitrary = undefined
+    arbitrary = _
+
+instance Arbitrary Locale where
+    arbitrary = _
 
 
 ----------------------------------------------------------------------
@@ -213,7 +283,7 @@ genRangeList :: forall (n :: Nat) (m :: Nat) (a :: *). (Show a, KnownNat n, Know
          => Gen a -> Gen (Range n m [a])
 genRangeList gc = unsafeRange @[a] @n @m <$> grange (val (Proxy @n)) (val (Proxy @m)) gc
   where
-    grange mi ma gelem = (`replicateM` gelem) =<< elements [mi .. (ma + mi)]
+    grange mi ma gelem = (`replicateM` gelem) =<< choose (mi, ma + mi)
 
     val :: forall (k :: Nat). (KnownNat k) => Proxy k -> Int
     val p = fromIntegral $ natVal p
@@ -222,7 +292,7 @@ genRangeText :: forall (n :: Nat) (m :: Nat). (KnownNat n, KnownNat m, LTE n m)
          => Gen Char -> Gen (Range n m ST.Text)
 genRangeText gc = unsafeRange @ST.Text @n @m . ST.pack <$> grange (val (Proxy @n)) (val (Proxy @m)) gc
   where
-    grange mi ma gelem = (`replicateM` gelem) =<< elements [mi .. (ma + mi)]
+    grange mi ma gelem = (`replicateM` gelem) =<< choose (mi, ma + mi)
 
     val :: forall (k :: Nat). (KnownNat k) => Proxy k -> Int
     val p = fromIntegral $ natVal p
