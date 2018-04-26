@@ -78,6 +78,7 @@ test-suite brig-types-tests
 
     other-modules:
         Test.Brig.Types.Arbitrary
+        Test.Brig.Types.Common
         Test.Brig.Types.TURN
 
     build-depends:
