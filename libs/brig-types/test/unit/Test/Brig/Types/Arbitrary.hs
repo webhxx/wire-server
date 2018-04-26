@@ -11,6 +11,7 @@
 
 module Test.Brig.Types.Arbitrary where
 
+import Brig.Types.Code
 import Brig.Types.TURN
 import Brig.Types.User
 import Control.Monad
@@ -18,17 +19,19 @@ import Data.Aeson
 import Data.Currency
 import Data.IP
 import Data.Misc
-import Data.Misc
 import Data.Monoid
 import Data.Range
+import Data.Text.Ascii
+import Data.Time
 import Data.Typeable
 import Data.Word
 import Galley.Types.Teams
 import GHC.TypeLits
 import Test.QuickCheck
-import Test.Tasty
+import Test.Tasty hiding (Timeout)
 import Test.Tasty.QuickCheck
 
+import qualified Data.ByteString.Char8 as SBS
 import qualified Data.Text as ST
 
 
@@ -130,26 +133,29 @@ instance Arbitrary CheckHandles where
     arbitrary = CheckHandles <$> genRangeList @1 @50 genText <*> (unsafeRange @Word @1 @10 <$> elements [1..10])
 
 instance Arbitrary CompletePasswordReset where
-    arbitrary = CompletePasswordReset <$> arbitrary <*> arbitrary <*> arbitrary
+    arbitrary = CompletePasswordReset <$> arbitrary <*> (PasswordResetCode <$> arbitrary) <*> arbitrary
 
 instance Arbitrary PasswordResetIdentity where
     arbitrary = oneof
-        [ PasswordResetIdentityKey <$> undefined
+        [ PasswordResetIdentityKey . PasswordResetKey <$> arbitrary
         , PasswordResetEmailIdentity <$> arbitrary
         , PasswordResetPhoneIdentity <$> arbitrary
         ]
 
-instance Arbitrary PasswordResetCode where
-    arbitrary = undefined
+instance Arbitrary AsciiBase64Url where
+    arbitrary = encodeBase64Url . SBS.pack <$> arbitrary @String
 
 instance Arbitrary PlainTextPassword where
-    arbitrary = undefined
+    arbitrary = PlainTextPassword . ST.pack <$> arbitrary @String
 
 instance Arbitrary DeleteUser where
-    arbitrary = undefined
+    arbitrary = DeleteUser <$> genMaybe arbitrary
 
 instance Arbitrary DeletionCodeTimeout where
-    arbitrary = undefined
+    arbitrary = DeletionCodeTimeout <$> arbitrary
+
+instance Arbitrary Timeout where
+    arbitrary = Timeout . fromIntegral <$> arbitrary @Int
 
 instance Arbitrary EmailRemove where
     arbitrary = undefined
