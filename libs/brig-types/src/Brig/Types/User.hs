@@ -1,5 +1,7 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE ViewPatterns               #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 
@@ -15,6 +17,7 @@ import Control.Applicative
 import Control.Monad ((<=<))
 import Data.Aeson
 import Data.Aeson.Types (Parser, Pair)
+import Data.Misc
 import Data.ByteString.Conversion
 import Data.Id
 import Data.Json.Util ((#), UTCTimeMillis (..))
@@ -249,7 +252,7 @@ data NewUser = NewUser
     , newUserAccentId       :: !(Maybe ColourId)
     , newUserEmailCode      :: !(Maybe ActivationCode)
     , newUserPhoneCode      :: !(Maybe ActivationCode)
-    , newUserInvitation     :: !NewUserInv
+    , newUserInvitation     :: !NewUserInv  -- TODO: use Maybe and drop NewUserInvNothing.
     , newUserLabel          :: !(Maybe CookieLabel)
     , newUserLocale         :: !(Maybe Locale)
     , newUserPassword       :: !(Maybe PlainTextPassword)
@@ -311,8 +314,9 @@ instance FromJSON NewUser where
                   (Nothing, Nothing, Just a)  -> return . NewUserInvTeamUser $ NewTeamCreator a
                   (Nothing, Nothing, Nothing) -> return NewUserInvNothing
                   (_, _, _)                   -> fail "team_code, team, invitation_code are mutually exclusive"
-              case (result, newUserPassword) of
-                  (NewUserInvTeamUser _, Nothing) -> fail "all team users must set a password on creation"
+              case (result, newUserPassword, newUserMaybeIdentity) of
+                  (_, _, JustUserIdentity (SSOIdentity {})) -> pure result
+                  (NewUserInvTeamUser _, Nothing, _) -> fail "all team users must set a password on creation"
                   _ -> pure result
           newUserLabel          <- o .:? "label"
           newUserLocale         <- o .:? "locale"
@@ -348,8 +352,12 @@ type ExpiresIn = Range 1 604800 Integer
 parseMaybeIdentityNewUser :: Object -> Parser (MaybeUserIdentity ExpiresIn)
 parseMaybeIdentityNewUser = parseMaybeIdentity "expires_in"
 
+-- TODO: it would be nice if we only had UTCTimeMillis everywhere.  not sure cassandra agrees with that, though.
 parseMaybeIdentityUser :: Object -> Parser (MaybeUserIdentity UTCTime)
-parseMaybeIdentityUser = parseMaybeIdentity "expires_at"
+parseMaybeIdentityUser = fmap tweak . parseMaybeIdentity @UTCTimeMillis "expires_at"
+  where
+    tweak (NothingUserIdentity eph) = NothingUserIdentity (fromUTCTimeMillis eph)
+    tweak (JustUserIdentity uid) = JustUserIdentity uid
 
 parseMaybeIdentity :: (Show a, FromJSON a) => Text -> Object -> Parser (MaybeUserIdentity a)
 parseMaybeIdentity key o = do
@@ -391,8 +399,9 @@ instance ToJSON BindingNewTeamUser where
          in object $ "currency" .= c
                    # HashMap.toList t'
 
-data NewTeamUser = NewTeamMember  !InvitationCode
-                 | NewTeamCreator !BindingNewTeamUser
+data NewTeamUser = NewTeamMember    !InvitationCode      -- ^ requires email address
+                 | NewTeamCreator   !BindingNewTeamUser
+                 | NewTeamMemberSSO
     deriving (Eq, Show)
 
 -----------------------------------------------------------------------------

@@ -1127,9 +1127,9 @@ autoConnect(_ ::: _ ::: uid ::: conn ::: req) = do
 createUser :: JSON ::: JSON ::: Request -> Handler Response
 createUser (_ ::: _ ::: req) = do
     new <- parseJsonBody req
-    case newUserIdentity new of
-      Just SSOIdentity {} -> throwStd $ badRequest "Invalid UserIdentity."
-      _ -> pure ()
+    case newUserIdentity new of  -- do this check in a newtype-wrapped json parser.  yes!
+        Just SSOIdentity {} -> throwStd $ badRequest "Invalid UserIdentity."
+        _ -> pure ()
     for_ (newUserEmail new) $ checkWhitelist . Left
     for_ (newUserPhone new) $ checkWhitelist . Right
     result <- API.createUser new !>> newUserError

@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
@@ -17,11 +18,12 @@ import Brig.Types.Code
 import Brig.Types.TURN
 import Brig.Types.User
 import Brig.Types.User.Auth
-import Control.Lens ((.~))
+import Control.Lens ((.~), (&), (%~))
 import Control.Monad
 import Data.Currency
 import Data.IP
 import Data.LanguageCodes
+import Data.Maybe
 import Data.Misc
 import Data.Monoid
 import Data.Range
@@ -186,7 +188,7 @@ instance Arbitrary NewPasswordReset where
     arbitrary = NewPasswordReset <$> arbitrary
 
 instance Arbitrary NewUser where
-    arbitrary = NewUser
+    arbitrary = tweak =<< (NewUser
         <$> arbitrary
         <*> arbitrary
         <*> arbitrary
@@ -197,7 +199,21 @@ instance Arbitrary NewUser where
         <*> arbitrary
         <*> arbitrary
         <*> arbitrary
-        <*> arbitrary
+        <*> arbitrary)
+      where
+        -- If we have an ssoid, no password is needed.  Otherwise, if team user, password is needed
+        tweak usr = if isTeamUser && not hasSSOId then usr' else pure usr
+          where
+            isTeamUser = case newUserInvitation usr of
+                NewUserInvTeamUser _ -> True
+                _ -> False
+
+            hasSSOId = isJust $ newUserSSOId usr
+
+            usr' :: Gen NewUser
+            usr' = do
+                newpass <- arbitrary
+                pure usr { newUserPassword = Just newpass }
 
 instance Arbitrary a => Arbitrary (MaybeUserIdentity a) where
     arbitrary = oneof
