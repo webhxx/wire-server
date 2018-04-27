@@ -1,19 +1,17 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeApplications    #-}
-
-{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.Brig.Types.User where
 
 import Brig.Types.User
+import Control.Lens
 import Data.Aeson
 import Data.Typeable
+import Galley.Types.Teams
 import Test.Brig.Types.Arbitrary ()
 import Test.Tasty
 import Test.Tasty.QuickCheck
@@ -21,7 +19,7 @@ import Test.Tasty.QuickCheck
 
 tests :: TestTree
 tests = testGroup "User (types vs. aeson)"
-    [ run @BindingNewTeamUser Proxy
+    [ run' @BindingNewTeamUser Proxy repair
     , run @CheckHandles Proxy
     , run @CompletePasswordReset Proxy
     , run @DeleteUser Proxy
@@ -45,7 +43,20 @@ tests = testGroup "User (types vs. aeson)"
   where
     run :: forall a. (Arbitrary a, Typeable a, ToJSON a, FromJSON a, Eq a, Show a)
          => Proxy a -> TestTree
-    run Proxy = testProperty msg trip
+    run proxy = run' proxy id
+
+    run' :: forall a. (Arbitrary a, Typeable a, ToJSON a, FromJSON a, Eq a, Show a)
+         => Proxy a -> (a -> a) -> TestTree
+    run' Proxy rep = testProperty msg trip
       where
         msg = show $ typeOf (undefined :: a)
-        trip (v :: a) = Right v === (eitherDecode . encode) v
+        trip (v :: a) = Right (rep v) === (eitherDecode . encode) v
+
+
+class NeedsRepair a where
+    repair :: a -> a
+
+-- the 'ToJSON' instance destroys the new team members, so we have to destroy them here in the
+-- input, too.
+instance NeedsRepair BindingNewTeamUser where
+    repair (BindingNewTeamUser (BindingNewTeam nt) cur) = BindingNewTeamUser (BindingNewTeam (nt & newTeamMembers .~ Nothing)) cur

@@ -5,7 +5,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE ViewPatterns        #-}
 
@@ -20,14 +19,12 @@ import Brig.Types.User
 import Brig.Types.User.Auth
 import Control.Monad
 import Data.Currency
-import Data.Id
 import Data.IP
 import Data.LanguageCodes
 import Data.Misc
 import Data.Monoid
 import Data.Range
 import Data.Text.Ascii
-import Data.Time
 import Data.Typeable
 import Data.Word
 import Galley.Types.Bot.Service.Internal
@@ -38,7 +35,6 @@ import GHC.TypeLits
 import Test.QuickCheck
 import Test.QuickCheck.Instances ()
 
-import qualified Data.ByteString.Char8 as SBS
 import qualified Data.Text as ST
 import qualified System.Random
 
@@ -127,7 +123,9 @@ instance Arbitrary Asset where
 
 
 instance Arbitrary BindingNewTeamUser where
-    arbitrary = BindingNewTeamUser <$> (BindingNewTeam <$> arbitrary) <*> genMaybe genEnumBounded
+    arbitrary = BindingNewTeamUser <$> (BindingNewTeam <$> arbitrary) <*> arbitrary
+    shrink (BindingNewTeamUser (BindingNewTeam nt) cur) =
+        BindingNewTeamUser <$> (BindingNewTeam <$> shrink nt) <*> [cur]
 
 instance Arbitrary Alpha where
     arbitrary = genEnumBounded
@@ -140,7 +138,10 @@ instance Arbitrary CheckHandles where
     arbitrary = CheckHandles <$> arbitrary <*> arbitrary
 
 instance Arbitrary CompletePasswordReset where
-    arbitrary = CompletePasswordReset <$> arbitrary <*> (PasswordResetCode <$> arbitrary) <*> arbitrary
+    arbitrary = CompletePasswordReset <$> arbitrary <*> arbitrary <*> arbitrary
+
+instance Arbitrary PasswordResetCode where
+    arbitrary = PasswordResetCode . fromRange <$> genRangeAsciiBase64Url @6 @1024
 
 instance Arbitrary PasswordResetIdentity where
     arbitrary = oneof
@@ -150,10 +151,10 @@ instance Arbitrary PasswordResetIdentity where
         ]
 
 instance Arbitrary AsciiBase64Url where
-    arbitrary = encodeBase64Url . SBS.pack <$> arbitrary @String
+    arbitrary = encodeBase64Url <$> arbitrary
 
 instance Arbitrary PlainTextPassword where
-    arbitrary = PlainTextPassword . ST.pack <$> arbitrary @String
+    arbitrary = PlainTextPassword . fromRange <$> genRangeText @6 @1024 arbitrary
 
 instance Arbitrary DeleteUser where
     arbitrary = DeleteUser <$> arbitrary
@@ -171,7 +172,7 @@ instance Arbitrary EmailUpdate where
     arbitrary = EmailUpdate <$> arbitrary
 
 instance Arbitrary HandleUpdate where
-    arbitrary = HandleUpdate . ST.pack <$> arbitrary
+    arbitrary = HandleUpdate <$> arbitrary
 
 instance Arbitrary LocaleUpdate where
     arbitrary = LocaleUpdate <$> arbitrary
@@ -192,10 +193,21 @@ instance Arbitrary NewUser where
         <*> arbitrary
         <*> arbitrary
         <*> arbitrary
-        <*> arbitrary
-        <*> arbitrary
 
-instance Arbitrary Pict where -- DEPRECATED
+instance Arbitrary a => Arbitrary (MaybeUserIdentity a) where
+    arbitrary = oneof
+        [ JustUserIdentity <$> arbitrary
+        , NothingUserIdentity <$> arbitrary
+        ]
+
+instance Arbitrary NewUserInv where
+    arbitrary = oneof
+        [ NewUserInvICode <$> arbitrary
+        , NewUserInvTeamUser <$> arbitrary
+        , pure NewUserInvNothing
+        ]
+
+instance Arbitrary Pict where -- ('Pict' is DEPRECATED)
     arbitrary = pure $ Pict []
 
 instance Arbitrary ActivationCode where
@@ -258,7 +270,6 @@ instance Arbitrary UserUpdate where
 instance Arbitrary User where
     arbitrary = User
         <$> arbitrary
-        <*> arbitrary
         <*> arbitrary
         <*> arbitrary
         <*> arbitrary

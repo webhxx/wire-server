@@ -95,6 +95,7 @@ test-suite brig-types-tests
       , lens
       , QuickCheck
       , quickcheck-instances
+      , random
       , tasty
       , tasty-quickcheck
       , text
