@@ -334,6 +334,7 @@ instance ToJSON NewUser where
         # "locale"          .= newUserLocale u
         # "password"        .= newUserPassword u
         # "expires_in"      .= newUserExpiresIn u
+        # "ssoid"           .= newUserSSOId u
         # maybe ("", Null) encodeNewTeamUser (newUserTeam u)
         # []
 
