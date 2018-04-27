@@ -33,6 +33,7 @@ import Data.Word
 import Galley.Types.Bot.Service.Internal
 import Galley.Types.Teams
 import Galley.Types.Teams.Internal
+import GHC.Stack
 import GHC.TypeLits
 import Test.QuickCheck
 import Test.QuickCheck.Instances ()
@@ -345,12 +346,24 @@ genRange pack gc = unsafeRange @b @n @m . pack <$> grange (val (Proxy @n)) (val 
     val :: forall (k :: Nat). (KnownNat k) => Proxy k -> Int
     val p = fromIntegral $ natVal p
 
-genRangeAsciiBase64Url :: forall (n :: Nat) (m :: Nat). (KnownNat n, KnownNat m, LTE n m)
+-- (can we implement this also in terms of 'genRange'?)
+genRangeAsciiBase64Url :: forall (n :: Nat) (m :: Nat).
+                          (HasCallStack, KnownNat n, KnownNat m, LTE n m)
                        => Gen (Range n m AsciiBase64Url)
-genRangeAsciiBase64Url = undefined  -- encodeBase64Url <$> genRangeText @(n * 8 / 6) @(m * 8 / 6)
+genRangeAsciiBase64Url = do
+    txt <- fromRange <$> genRangeText @n @m genBase64UrlChar
+    case validateBase64Url txt of
+        Right ascii -> pure $ unsafeRange @AsciiBase64Url @n @m ascii
+        Left msg    -> error msg
+
+genBase64UrlChar :: Gen Char
+genBase64UrlChar = elements $ alphaNumChars <> "_-="
 
 genAlphaNum :: Gen Char
-genAlphaNum = elements $ ['a'..'z'] <> ['A'..'Z'] <> ['0'..'9'] <> ['_']
+genAlphaNum = elements $ alphaNumChars <> "_"
+
+alphaNumChars :: [Char]
+alphaNumChars = ['a'..'z'] <> ['A'..'Z'] <> ['0'..'9']
 
 genMaybe :: Gen a -> Gen (Maybe a)
 genMaybe gen = oneof [pure Nothing, Just <$> gen]
