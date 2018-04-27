@@ -326,18 +326,19 @@ instance Arbitrary Country where
 ----------------------------------------------------------------------
 -- utilities
 
-genRangeList :: forall (n :: Nat) (m :: Nat) (a :: *). (Show a, KnownNat n, KnownNat m, LTE n m)
+genRangeList :: forall (n :: Nat) (m :: Nat) (a :: *).
+                (Show a, KnownNat n, KnownNat m, LTE n m)
              => Gen a -> Gen (Range n m [a])
-genRangeList gc = unsafeRange @[a] @n @m <$> grange (val (Proxy @n)) (val (Proxy @m)) gc
-  where
-    grange mi ma gelem = (`replicateM` gelem) =<< choose (mi, ma + mi)
-
-    val :: forall (k :: Nat). (KnownNat k) => Proxy k -> Int
-    val p = fromIntegral $ natVal p
+genRangeList = genRange id
 
 genRangeText :: forall (n :: Nat) (m :: Nat). (KnownNat n, KnownNat m, LTE n m)
              => Gen Char -> Gen (Range n m ST.Text)
-genRangeText gc = unsafeRange @ST.Text @n @m . ST.pack <$> grange (val (Proxy @n)) (val (Proxy @m)) gc
+genRangeText = genRange ST.pack
+
+genRange :: forall (n :: Nat) (m :: Nat) (a :: *) (b :: *).
+            (Show b, Bounds b, KnownNat n, KnownNat m, LTE n m)
+         => ([a] -> b) -> Gen a -> Gen (Range n m b)
+genRange pack gc = unsafeRange @b @n @m . pack <$> grange (val (Proxy @n)) (val (Proxy @m)) gc
   where
     grange mi ma gelem = (`replicateM` gelem) =<< choose (mi, ma + mi)
 
