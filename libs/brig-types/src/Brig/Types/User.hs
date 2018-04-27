@@ -307,9 +307,9 @@ instance FromJSON NewUser where
               newUserNewTeam  <- o .:? "team"
               result <- case (invitationCode, newUserTeamCode, newUserNewTeam) of
                   (Just a,  Nothing, Nothing) -> return . NewUserInvICode $ a
-                  (Nothing, Just a,  Nothing) -> return . NewUserInvTeamUser . NewTeamMember $ a
-                  (Nothing, Nothing, Just a)  -> return . NewUserInvTeamUser . NewTeamCreator $ a
-                  (Nothing, Nothing, Nothing) -> return $ NewUserInvNothing
+                  (Nothing, Just a,  Nothing) -> return . NewUserInvTeamUser $ NewTeamMember a
+                  (Nothing, Nothing, Just a)  -> return . NewUserInvTeamUser $ NewTeamCreator a
+                  (Nothing, Nothing, Nothing) -> return NewUserInvNothing
                   (_, _, _)                   -> fail "team_code, team, invitation_code are mutually exclusive"
               case (result, newUserPassword) of
                   (NewUserInvTeamUser _, Nothing) -> fail "all team users must set a password on creation"

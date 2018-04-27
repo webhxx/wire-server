@@ -112,4 +112,4 @@ roundtripTests =
     run Proxy = testProperty msg trip
       where
         msg = show $ typeOf (undefined :: a)
-        trip (v :: a) = Right v === (eitherDecode . encode) v
+        trip (v :: a) = Right v === (parseEither parseJSON . toJSON) v
