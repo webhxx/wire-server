@@ -17,6 +17,7 @@ import Brig.Types.Code
 import Brig.Types.TURN
 import Brig.Types.User
 import Brig.Types.User.Auth
+import Control.Lens ((.~))
 import Control.Monad
 import Data.Currency
 import Data.IP
@@ -122,8 +123,12 @@ instance Arbitrary Asset where
   arbitrary = ImageAsset <$> arbitrary <*> arbitrary
 
 
+-- | TODO: since new team members do not get serialized, we zero them here.  it may be worth looking
+-- into how this can be solved on in the types.
 instance Arbitrary BindingNewTeamUser where
-    arbitrary = BindingNewTeamUser <$> (BindingNewTeam <$> arbitrary) <*> arbitrary
+    arbitrary = BindingNewTeamUser
+        <$> (BindingNewTeam . (newTeamMembers .~ Nothing) <$> arbitrary @(NewTeam ()))
+        <*> arbitrary
     shrink (BindingNewTeamUser (BindingNewTeam nt) cur) =
         BindingNewTeamUser <$> (BindingNewTeam <$> shrink nt) <*> [cur]
 
