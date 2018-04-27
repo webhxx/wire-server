@@ -20,9 +20,10 @@ import Data.Id
 import Data.Json.Util ((#), UTCTimeMillis (..))
 import Data.Maybe (isJust)
 import Data.Misc (PlainTextPassword (..))
+import Data.Monoid
 import Data.Range
-import Data.Text (Text)
 import Data.Text.Ascii
+import Data.Text (Text)
 import Data.Time (UTCTime)
 import Galley.Types.Bot (ServiceRef)
 import Galley.Types.Teams hiding (userId)
@@ -110,24 +111,37 @@ publicProfile u = (connectedProfile u)
 
 -- | The data of an existing user.
 data User = User
-    { userId       :: !UserId
-    , userIdentity :: !(Maybe UserIdentity)
-    , userName     :: !Name
-    , userPict     :: !Pict -- ^ DEPRECATED
-    , userAssets   :: [Asset]
-    , userAccentId :: !ColourId
-    , userDeleted  :: !Bool
-    , userLocale   :: !Locale
-    , userService  :: !(Maybe ServiceRef)
+    { userId            :: !UserId
+    , userMaybeIdentity :: !(MaybeUserIdentity UTCTime)
+    , userName          :: !Name
+    , userPict          :: !Pict -- ^ DEPRECATED
+    , userAssets        :: [Asset]
+    , userAccentId      :: !ColourId
+    , userDeleted       :: !Bool
+    , userLocale        :: !Locale
+    , userService       :: !(Maybe ServiceRef)
         -- ^ Set if the user represents an external service,
         -- i.e. it is a "bot".
-    , userHandle   :: !(Maybe Handle)
-    , userExpire   :: !(Maybe UTCTime)
-        -- ^ Set if the user is ephemeral
-    , userTeam     :: !(Maybe TeamId)
+    , userHandle        :: !(Maybe Handle)
+    , userTeam          :: !(Maybe TeamId)
         -- ^ Set if the user is part of a binding team
     }
     deriving (Eq, Show)
+
+-- | For ephemeral users, this contains a life expectancy or timeout.
+data MaybeUserIdentity eph = JustUserIdentity !UserIdentity | NothingUserIdentity !eph
+    deriving (Eq, Show)
+
+userIdentity :: User -> Maybe UserIdentity
+userIdentity usr = case userMaybeIdentity usr of
+    JustUserIdentity uid -> Just uid
+    _ -> Nothing
+
+-- | Set if the user is ephemeral
+userExpire :: User -> Maybe UTCTime
+userExpire usr = case userMaybeIdentity usr of
+    NothingUserIdentity t -> Just t
+    JustUserIdentity _    -> Nothing
 
 userEmail :: User -> Maybe Email
 userEmail = emailIdentity <=< userIdentity
@@ -177,7 +191,7 @@ instance ToJSON User where
 instance FromJSON User where
     parseJSON = withObject "user" $ \o ->
         User <$> o .:  "id"
-             <*> parseIdentity o
+             <*> parseMaybeIdentityUser o
              <*> o .:  "name"
              <*> o .:? "picture" .!= noPict
              <*> o .:? "assets"  .!= []
@@ -186,7 +200,6 @@ instance FromJSON User where
              <*> o .:  "locale"
              <*> o .:? "service"
              <*> o .:? "handle"
-             <*> o .:? "expires_at"
              <*> o .:? "team"
 
 instance FromJSON UserProfile where
@@ -230,20 +243,44 @@ instance ToJSON SelfProfile where
 
 data NewUser = NewUser
     { newUserName           :: !Name
-    , newUserIdentity       :: !(Maybe UserIdentity)
+    , newUserMaybeIdentity  :: !(MaybeUserIdentity ExpiresIn)
     , newUserPict           :: !(Maybe Pict) -- ^ DEPRECATED
     , newUserAssets         :: [Asset]
     , newUserAccentId       :: !(Maybe ColourId)
     , newUserEmailCode      :: !(Maybe ActivationCode)
     , newUserPhoneCode      :: !(Maybe ActivationCode)
-    , newUserInvitationCode :: !(Maybe InvitationCode)
+    , newUserInvitation     :: !NewUserInv
     , newUserLabel          :: !(Maybe CookieLabel)
     , newUserLocale         :: !(Maybe Locale)
     , newUserPassword       :: !(Maybe PlainTextPassword)
-    , newUserTeam           :: !(Maybe NewTeamUser)
-    , newUserExpiresIn      :: !(Maybe (Range 1 604800 Integer)) -- ^ 1 second - 1 week
     }
     deriving (Eq, Show)
+
+data NewUserInv =
+    NewUserInvICode InvitationCode
+  | NewUserInvTeamUser NewTeamUser
+  | NewUserInvNothing
+  deriving (Eq, Show)
+
+newUserIdentity :: NewUser -> Maybe UserIdentity
+newUserIdentity nu = case newUserMaybeIdentity nu of
+    JustUserIdentity uid  -> Just uid
+    NothingUserIdentity _ -> Nothing
+
+newUserExpiresIn :: NewUser -> Maybe ExpiresIn
+newUserExpiresIn nu = case newUserMaybeIdentity nu of
+    JustUserIdentity _      -> Nothing
+    NothingUserIdentity eph -> Just eph
+
+newUserInvitationCode :: NewUser -> Maybe InvitationCode
+newUserInvitationCode nu = case newUserInvitation nu of
+    NewUserInvICode ic -> Just ic
+    _                  -> Nothing
+
+newUserTeam :: NewUser -> Maybe NewTeamUser
+newUserTeam nu = case newUserInvitation nu of
+    NewUserInvTeamUser tu -> Just tu
+    _                     -> Nothing
 
 newUserEmail :: NewUser -> Maybe Email
 newUserEmail = emailIdentity <=< newUserIdentity
@@ -257,28 +294,28 @@ newUserSSOId = ssoIdentity <=< newUserIdentity
 instance FromJSON NewUser where
       parseJSON = withObject "new-user" $ \o -> do
           newUserName           <- o .: "name"
-          newUserIdentity       <- parseIdentity o
+          newUserMaybeIdentity  <- parseMaybeIdentityNewUser o
           newUserPict           <- o .:? "picture"
           newUserAssets         <- o .:? "assets" .!= []
           newUserAccentId       <- o .:? "accent_id"
           newUserEmailCode      <- o .:? "email_code"
           newUserPhoneCode      <- o .:? "phone_code"
-          newUserInvitationCode <- o .:? "invitation_code"
+          newUserPassword       <- o .:? "password"
+          newUserInvitation     <- do
+              invitationCode  <- o .:? "invitation_code"
+              newUserTeamCode <- o .:? "team_code"
+              newUserNewTeam  <- o .:? "team"
+              result <- case (invitationCode, newUserTeamCode, newUserNewTeam) of
+                  (Just a,  Nothing, Nothing) -> return . NewUserInvICode $ a
+                  (Nothing, Just a,  Nothing) -> return . NewUserInvTeamUser . NewTeamMember $ a
+                  (Nothing, Nothing, Just a)  -> return . NewUserInvTeamUser . NewTeamCreator $ a
+                  (Nothing, Nothing, Nothing) -> return $ NewUserInvNothing
+                  (_, _, _)                   -> fail "team_code, team, invitation_code are mutually exclusive"
+              case (result, newUserPassword) of
+                  (NewUserInvTeamUser _, Nothing) -> fail "all team users must set a password on creation"
+                  _ -> pure result
           newUserLabel          <- o .:? "label"
           newUserLocale         <- o .:? "locale"
-          newUserPassword       <- o .:? "password"
-          newUserTeamCode       <- o .:? "team_code"
-          newUserNewTeam        <- o .:? "team"
-          newUserTeam <- case (newUserTeamCode, newUserNewTeam, newUserPassword, newUserInvitationCode) of
-                (Just a,  Nothing, Just _, Nothing) -> return $ Just (NewTeamMember a)
-                (Nothing, Just b , Just _, Nothing) -> return $ Just (NewTeamCreator b)
-                (Nothing, Nothing,      _,       _) -> return Nothing
-                _                                   -> fail "team_code, team, invitation_code are mutually exclusive \
-                                                            \ and all team users must set a password on creation "
-          newUserExpires   <- o .:? "expires_in"
-          newUserExpiresIn <- case (newUserExpires, newUserIdentity) of
-                (Just _, Just _) -> fail "Only users without an identity can expire"
-                _                -> return newUserExpires
           return NewUser{..}
 
 instance ToJSON NewUser where
@@ -303,6 +340,24 @@ instance ToJSON NewUser where
 encodeNewTeamUser :: NewTeamUser -> Pair
 encodeNewTeamUser (NewTeamMember m)  = "team_code" .= m
 encodeNewTeamUser (NewTeamCreator c) = "team" .= c
+
+-- | 1 second - 1 week
+type ExpiresIn = Range 1 604800 Integer
+
+parseMaybeIdentityNewUser :: Object -> Parser (MaybeUserIdentity ExpiresIn)
+parseMaybeIdentityNewUser = parseMaybeIdentity "expires_in"
+
+parseMaybeIdentityUser :: Object -> Parser (MaybeUserIdentity UTCTime)
+parseMaybeIdentityUser = parseMaybeIdentity "expires_at"
+
+parseMaybeIdentity :: (Show a, FromJSON a) => Text -> Object -> Parser (MaybeUserIdentity a)
+parseMaybeIdentity key o = do
+    muid <- parseIdentity o
+    mexp <- o .:? key
+    case (muid, mexp) of
+        (Just usr, Nothing) -> pure $ JustUserIdentity usr
+        (Nothing, Just eph) -> pure $ NothingUserIdentity eph
+        bad                 -> fail $ "parseMaybeIdentityUser: " <> show bad
 
 -- | Fails if email or phone or ssoid are present but invalid
 parseIdentity :: Object -> Parser (Maybe UserIdentity)
