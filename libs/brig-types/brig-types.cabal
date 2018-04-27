@@ -93,6 +93,7 @@ test-suite brig-types-tests
       , iproute
       , lens
       , QuickCheck
+      , quickcheck-instances
       , tasty
       , tasty-quickcheck
       , text

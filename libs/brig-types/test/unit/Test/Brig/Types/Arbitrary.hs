@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE KindSignatures      #-}
@@ -21,6 +22,7 @@ import Data.Aeson
 import Data.Currency
 import Data.Id
 import Data.IP
+import Data.LanguageCodes
 import Data.Misc
 import Data.Monoid
 import Data.Range
@@ -28,11 +30,12 @@ import Data.Text.Ascii
 import Data.Time
 import Data.Typeable
 import Data.Word
-import Galley.Types.Bot.Service
+import Galley.Types.Bot.Service.Internal
 import Galley.Types.Teams
 import Galley.Types.Teams.Internal
 import GHC.TypeLits
 import Test.QuickCheck
+import Test.QuickCheck.Instances ()
 import Test.Tasty hiding (Timeout)
 import Test.Tasty.QuickCheck
 
@@ -94,8 +97,8 @@ instance Arbitrary ColourId where
 
 instance Arbitrary Email where
   arbitrary = do
-      local  <- ST.filter (/= '@') <$> genText
-      domain <- ST.filter (/= '@') <$> genText
+      local  <- ST.filter (/= '@') <$> arbitrary
+      domain <- ST.filter (/= '@') <$> arbitrary
       pure $ Email local domain
 
 instance Arbitrary Phone where
@@ -114,13 +117,13 @@ instance Arbitrary UserIdentity where
     ]
 
 instance Arbitrary UserSSOId where
-  arbitrary = UserSSOId <$> genText
+  arbitrary = UserSSOId <$> arbitrary
 
 instance Arbitrary AssetSize where
   arbitrary = genEnumBounded
 
 instance Arbitrary Asset where
-  arbitrary = ImageAsset <$> genText <*> arbitrary
+  arbitrary = ImageAsset <$> arbitrary <*> arbitrary
 
 
 instance Arbitrary BindingNewTeamUser where
@@ -131,7 +134,7 @@ instance Arbitrary (NewTeam ()) where
       where txt = genRangeText @1 @256 arbitrary
 
 instance Arbitrary CheckHandles where
-    arbitrary = CheckHandles <$> genRangeList @1 @50 genText <*> (unsafeRange @Word @1 @10 <$> choose (1, 10))
+    arbitrary = CheckHandles <$> genRangeList @1 @50 arbitrary <*> (unsafeRange @Word @1 @10 <$> choose (1, 10))
 
 instance Arbitrary CompletePasswordReset where
     arbitrary = CompletePasswordReset <$> arbitrary <*> (PasswordResetCode <$> arbitrary) <*> arbitrary
@@ -258,29 +261,73 @@ instance Arbitrary UserProfile where
             }
 
 instance Arbitrary ServiceRef where
-    arbitrary = _
+    arbitrary = ServiceRef <$> arbitrary <*> arbitrary
 
 instance Arbitrary UserUpdate where
-    arbitrary = _
+    arbitrary = UserUpdate
+        <$> genMaybe arbitrary
+        <*> pure Nothing
+        <*> genMaybe arbitrary
+        <*> genMaybe arbitrary
 
 instance Arbitrary User where
-    arbitrary = _
+    arbitrary = do
+        x0  <- arbitrary
+        x1  <- arbitrary
+        x2  <- arbitrary
+        x3  <- pure $ Pict []
+        x4  <- arbitrary
+        x5  <- arbitrary
+        x6  <- arbitrary
+        x7  <- arbitrary
+        x8  <- arbitrary
+        x9  <- arbitrary
+        x10 <- arbitrary
+        x11 <- arbitrary
+
+        pure User
+            { Brig.Types.User.userId
+                           = x0  :: UserId
+            , userIdentity = x1  :: (Maybe UserIdentity)
+            , userName     = x2  :: Name
+            , userPict     = x3  :: Pict -- ^ DEPRECATED
+            , userAssets   = x4  :: [Asset]
+            , userAccentId = x5  :: ColourId
+            , userDeleted  = x6  :: Bool
+            , userLocale   = x7  :: Locale
+            , userService  = x8  :: (Maybe ServiceRef)
+            , userHandle   = x9  :: (Maybe Handle)
+            , userExpire   = x10 :: (Maybe UTCTime)
+            , userTeam     = x11 :: (Maybe TeamId)
+            }
 
 instance Arbitrary VerifyDeleteUser where
-    arbitrary = _
+    arbitrary = VerifyDeleteUser <$> arbitrary <*> arbitrary
+
+instance Arbitrary Key where
+    arbitrary = Key <$> genRangeAsciiBase64Url @20 @20
+
+instance Arbitrary Brig.Types.Code.Value where
+    arbitrary = Value <$> genRangeAsciiBase64Url @6 @20
 
 instance Arbitrary Locale where
-    arbitrary = _
+    arbitrary = Locale <$> arbitrary <*> genMaybe arbitrary
+
+instance Arbitrary Language where
+    arbitrary = Language <$> genEnumBounded
+
+-- | <https://github.com/HugoDaniel/iso639/pull/4>
+deriving instance Bounded ISO639_1
+
+instance Arbitrary Country where
+    arbitrary = Country <$> genEnumBounded
 
 
 ----------------------------------------------------------------------
 -- utilities
 
-genText :: Gen ST.Text
-genText = ST.pack <$> arbitrary
-
 genRangeList :: forall (n :: Nat) (m :: Nat) (a :: *). (Show a, KnownNat n, KnownNat m, LTE n m)
-         => Gen a -> Gen (Range n m [a])
+             => Gen a -> Gen (Range n m [a])
 genRangeList gc = unsafeRange @[a] @n @m <$> grange (val (Proxy @n)) (val (Proxy @m)) gc
   where
     grange mi ma gelem = (`replicateM` gelem) =<< choose (mi, ma + mi)
@@ -289,13 +336,17 @@ genRangeList gc = unsafeRange @[a] @n @m <$> grange (val (Proxy @n)) (val (Proxy
     val p = fromIntegral $ natVal p
 
 genRangeText :: forall (n :: Nat) (m :: Nat). (KnownNat n, KnownNat m, LTE n m)
-         => Gen Char -> Gen (Range n m ST.Text)
+             => Gen Char -> Gen (Range n m ST.Text)
 genRangeText gc = unsafeRange @ST.Text @n @m . ST.pack <$> grange (val (Proxy @n)) (val (Proxy @m)) gc
   where
     grange mi ma gelem = (`replicateM` gelem) =<< choose (mi, ma + mi)
 
     val :: forall (k :: Nat). (KnownNat k) => Proxy k -> Int
     val p = fromIntegral $ natVal p
+
+genRangeAsciiBase64Url :: forall (n :: Nat) (m :: Nat). (KnownNat n, KnownNat m, LTE n m)
+                       => Gen (Range n m AsciiBase64Url)
+genRangeAsciiBase64Url = undefined  -- encodeBase64Url <$> genRangeText @(n * 8 / 6) @(m * 8 / 6)
 
 genAlphaNum :: Gen Char
 genAlphaNum = elements $ ['a'..'z'] <> ['A'..'Z'] <> ['0'..'9'] <> ['_']
