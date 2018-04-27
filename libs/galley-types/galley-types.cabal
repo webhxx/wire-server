@@ -19,6 +19,7 @@ library
         Galley.Types
         Galley.Types.Bot
         Galley.Types.Bot.Service
+        Galley.Types.Bot.Service.Internal
         Galley.Types.Proto
         Galley.Types.Swagger
         Galley.Types.Teams
