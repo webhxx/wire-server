@@ -91,6 +91,7 @@ test-suite brig-types-tests
       , currency-codes
       , galley-types
       , iproute
+      , iso639
       , lens
       , QuickCheck
       , quickcheck-instances

@@ -7,15 +7,12 @@
 module Test.Brig.Types.Common where
 
 import Brig.Types.Common
-import Control.Monad
 import Data.Aeson
-import Data.Monoid
 import Data.Typeable
 import Test.Brig.Types.Arbitrary ()
 import Test.Tasty
 import Test.Tasty.QuickCheck
 
-import qualified Data.Text as ST
 
 tests :: TestTree
 tests = testGroup "Common (types vs. aeson)"

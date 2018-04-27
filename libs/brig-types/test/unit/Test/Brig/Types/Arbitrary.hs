@@ -1,12 +1,13 @@
 {-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE ViewPatterns        #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -18,7 +19,6 @@ import Brig.Types.TURN
 import Brig.Types.User
 import Brig.Types.User.Auth
 import Control.Monad
-import Data.Aeson
 import Data.Currency
 import Data.Id
 import Data.IP
@@ -37,11 +37,10 @@ import GHC.Stack
 import GHC.TypeLits
 import Test.QuickCheck
 import Test.QuickCheck.Instances ()
-import Test.Tasty hiding (Timeout)
-import Test.Tasty.QuickCheck
 
 import qualified Data.ByteString.Char8 as SBS
 import qualified Data.Text as ST
+import qualified System.Random
 
 
 newtype Octet = Octet { octet :: Word16 }
@@ -130,12 +129,15 @@ instance Arbitrary Asset where
 instance Arbitrary BindingNewTeamUser where
     arbitrary = BindingNewTeamUser <$> (BindingNewTeam <$> arbitrary) <*> genMaybe genEnumBounded
 
+instance Arbitrary Alpha where
+    arbitrary = genEnumBounded
+
 instance Arbitrary (NewTeam ()) where
-    arbitrary = NewTeam <$> txt <*> txt <*> genMaybe txt <*> genMaybe (pure ())
-      where txt = genRangeText @1 @256 arbitrary
+    arbitrary = NewTeam <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
+    shrink (NewTeam x0 x1 x2 x3) = NewTeam <$> shrink x0 <*> shrink x1 <*> shrink x2 <*> shrink x3
 
 instance Arbitrary CheckHandles where
-    arbitrary = CheckHandles <$> genRangeList @1 @50 arbitrary <*> (unsafeRange @Word @1 @10 <$> choose (1, 10))
+    arbitrary = CheckHandles <$> arbitrary <*> arbitrary
 
 instance Arbitrary CompletePasswordReset where
     arbitrary = CompletePasswordReset <$> arbitrary <*> (PasswordResetCode <$> arbitrary) <*> arbitrary
@@ -154,7 +156,7 @@ instance Arbitrary PlainTextPassword where
     arbitrary = PlainTextPassword . ST.pack <$> arbitrary @String
 
 instance Arbitrary DeleteUser where
-    arbitrary = DeleteUser <$> genMaybe arbitrary
+    arbitrary = DeleteUser <$> arbitrary
 
 instance Arbitrary DeletionCodeTimeout where
     arbitrary = DeletionCodeTimeout <$> arbitrary
@@ -178,36 +180,35 @@ instance Arbitrary NewPasswordReset where
     arbitrary = NewPasswordReset <$> arbitrary
 
 instance Arbitrary NewUser where
-    arbitrary = do
-        x0  <- arbitrary
-        x1  <- arbitrary
-        x2  <- pure Nothing
-        x3  <- arbitrary
-        x4  <- arbitrary
-        x5  <- genMaybe $ ActivationCode <$> arbitrary
-        x6  <- genMaybe $ ActivationCode <$> arbitrary
-        x7  <- genMaybe $ InvitationCode <$> arbitrary
-        x8  <- genMaybe $ CookieLabel . ST.pack <$> arbitrary
-        x9  <- arbitrary
-        x10 <- arbitrary
-        x11 <- arbitrary
-        x12 <- genMaybe $ unsafeRange @Integer @1 @604800 <$> choose (1, 604800)
+    arbitrary = NewUser
+        <$> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
 
-        pure NewUser
-            { newUserName           = x0  :: Name
-            , newUserIdentity       = x1  :: (Maybe UserIdentity)
-            , newUserPict           = x2  :: (Maybe Pict) -- ^ DEPRECATED
-            , newUserAssets         = x3  :: [Asset]
-            , newUserAccentId       = x4  :: (Maybe ColourId)
-            , newUserEmailCode      = x5  :: (Maybe ActivationCode)
-            , newUserPhoneCode      = x6  :: (Maybe ActivationCode)
-            , newUserInvitationCode = x7  :: (Maybe InvitationCode)
-            , newUserLabel          = x8  :: (Maybe CookieLabel)
-            , newUserLocale         = x9  :: (Maybe Locale)
-            , newUserPassword       = x10 :: (Maybe PlainTextPassword)
-            , newUserTeam           = x11 :: (Maybe NewTeamUser)
-            , newUserExpiresIn      = x12 :: (Maybe (Range 1 604800 Integer)) -- ^ 1 second - 1 week
-            }
+instance Arbitrary Pict where -- DEPRECATED
+    arbitrary = pure $ Pict []
+
+instance Arbitrary ActivationCode where
+    arbitrary = ActivationCode <$> arbitrary
+    shrink (ActivationCode x) = ActivationCode <$> shrink x
+
+instance Arbitrary InvitationCode where
+    arbitrary = InvitationCode <$> arbitrary
+    shrink (InvitationCode x) = InvitationCode <$> shrink x
+
+instance Arbitrary CookieLabel where
+    arbitrary = CookieLabel <$> arbitrary
+    shrink (CookieLabel x) = CookieLabel <$> shrink x
 
 instance Arbitrary NewTeamUser where
     arbitrary = oneof
@@ -215,11 +216,8 @@ instance Arbitrary NewTeamUser where
         , NewTeamCreator <$> arbitrary
         ]
 
-instance Arbitrary InvitationCode where
-    arbitrary = InvitationCode <$> arbitrary
-
 instance Arbitrary PasswordChange where
-    arbitrary = PasswordChange <$> genMaybe arbitrary <*> arbitrary
+    arbitrary = PasswordChange <$> arbitrary <*> arbitrary
 
 instance Arbitrary PhoneRemove where
     arbitrary = PhoneRemove <$> arbitrary
@@ -234,73 +232,43 @@ instance Arbitrary UserHandleInfo where
     arbitrary = UserHandleInfo <$> arbitrary
 
 instance Arbitrary UserProfile where
-    arbitrary = do
-        x0 <- arbitrary
-        x1 <- arbitrary
-        x2 <- pure $ Pict []
-        x3 <- arbitrary
-        x4 <- arbitrary
-        x5 <- arbitrary
-        x6 <- arbitrary
-        x7 <- arbitrary
-        x8 <- arbitrary
-        x9 <- arbitrary
-        x10 <- arbitrary
-
-        pure UserProfile
-            { profileId       = x0  :: UserId
-            , profileName     = x1  :: Name
-            , profilePict     = x2  :: Pict -- ^ DEPRECATED
-            , profileAssets   = x3  :: [Asset]
-            , profileAccentId = x4  :: ColourId
-            , profileDeleted  = x5  :: Bool
-            , profileService  = x6  :: (Maybe ServiceRef)
-            , profileHandle   = x7  :: (Maybe Handle)
-            , profileLocale   = x8  :: (Maybe Locale)
-            , profileExpire   = x9  :: (Maybe UTCTime)
-            , profileTeam     = x10 :: (Maybe TeamId)
-            }
+    arbitrary = UserProfile
+        <$> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
 
 instance Arbitrary ServiceRef where
     arbitrary = ServiceRef <$> arbitrary <*> arbitrary
 
 instance Arbitrary UserUpdate where
     arbitrary = UserUpdate
-        <$> genMaybe arbitrary
+        <$> arbitrary
         <*> pure Nothing
-        <*> genMaybe arbitrary
-        <*> genMaybe arbitrary
+        <*> arbitrary
+        <*> arbitrary
 
 instance Arbitrary User where
-    arbitrary = do
-        x0  <- arbitrary
-        x1  <- arbitrary
-        x2  <- arbitrary
-        x3  <- pure $ Pict []
-        x4  <- arbitrary
-        x5  <- arbitrary
-        x6  <- arbitrary
-        x7  <- arbitrary
-        x8  <- arbitrary
-        x9  <- arbitrary
-        x10 <- arbitrary
-        x11 <- arbitrary
-
-        pure User
-            { Brig.Types.User.userId
-                           = x0  :: UserId
-            , userIdentity = x1  :: (Maybe UserIdentity)
-            , userName     = x2  :: Name
-            , userPict     = x3  :: Pict -- ^ DEPRECATED
-            , userAssets   = x4  :: [Asset]
-            , userAccentId = x5  :: ColourId
-            , userDeleted  = x6  :: Bool
-            , userLocale   = x7  :: Locale
-            , userService  = x8  :: (Maybe ServiceRef)
-            , userHandle   = x9  :: (Maybe Handle)
-            , userExpire   = x10 :: (Maybe UTCTime)
-            , userTeam     = x11 :: (Maybe TeamId)
-            }
+    arbitrary = User
+        <$> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
 
 instance Arbitrary VerifyDeleteUser where
     arbitrary = VerifyDeleteUser <$> arbitrary <*> arbitrary
@@ -312,7 +280,7 @@ instance Arbitrary Brig.Types.Code.Value where
     arbitrary = Value <$> genRangeAsciiBase64Url @6 @20
 
 instance Arbitrary Locale where
-    arbitrary = Locale <$> arbitrary <*> genMaybe arbitrary
+    arbitrary = Locale <$> arbitrary <*> arbitrary
 
 instance Arbitrary Language where
     arbitrary = Language <$> genEnumBounded
@@ -327,6 +295,24 @@ instance Arbitrary Country where
 ----------------------------------------------------------------------
 -- utilities
 
+instance (KnownNat n, KnownNat m, LTE n m) => Arbitrary (Range n m ST.Text) where
+    arbitrary = genRangeText arbitrary
+    shrink (fromRange -> txt) = [unsafeRange @ST.Text @n @m $ ST.take (fromKnownNat (Proxy @n)) txt]
+
+instance (KnownNat n, KnownNat m, LTE n m) => Arbitrary (Range n m Integer) where
+    arbitrary = arbitraryIntegral
+
+instance (KnownNat n, KnownNat m, LTE n m) => Arbitrary (Range n m Word) where
+    arbitrary = arbitraryIntegral
+
+instance (KnownNat n, KnownNat m, LTE n m, Arbitrary a, Show a) => Arbitrary (Range n m [a]) where
+    arbitrary = genRangeList @n @m @a arbitrary
+
+arbitraryIntegral :: forall n m i.
+                     (KnownNat n, KnownNat m, LTE n m, Integral i, Show i, Bounds i, System.Random.Random i)
+                  => Gen (Range n m i)
+arbitraryIntegral = unsafeRange @i @n @m <$> choose (fromKnownNat (Proxy @n), fromKnownNat (Proxy @m))
+
 genRangeList :: forall (n :: Nat) (m :: Nat) (a :: *).
                 (Show a, KnownNat n, KnownNat m, LTE n m)
              => Gen a -> Gen (Range n m [a])
@@ -339,12 +325,12 @@ genRangeText = genRange ST.pack
 genRange :: forall (n :: Nat) (m :: Nat) (a :: *) (b :: *).
             (Show b, Bounds b, KnownNat n, KnownNat m, LTE n m)
          => ([a] -> b) -> Gen a -> Gen (Range n m b)
-genRange pack gc = unsafeRange @b @n @m . pack <$> grange (val (Proxy @n)) (val (Proxy @m)) gc
+genRange pack gc = unsafeRange @b @n @m . pack <$> grange (fromKnownNat (Proxy @n)) (fromKnownNat (Proxy @m)) gc
   where
-    grange mi ma gelem = (`replicateM` gelem) =<< choose (mi, ma + mi)
+    grange mi ma gelem = (`replicateM` gelem) =<< choose (mi, ma)
 
-    val :: forall (k :: Nat). (KnownNat k) => Proxy k -> Int
-    val p = fromIntegral $ natVal p
+fromKnownNat :: forall (k :: Nat) (i :: *). (Num i, KnownNat k) => Proxy k -> i
+fromKnownNat p = fromIntegral $ natVal p
 
 -- (can we implement this also in terms of 'genRange'?)
 genRangeAsciiBase64Url :: forall (n :: Nat) (m :: Nat).
@@ -364,9 +350,6 @@ genAlphaNum = elements $ alphaNumChars <> "_"
 
 alphaNumChars :: [Char]
 alphaNumChars = ['a'..'z'] <> ['A'..'Z'] <> ['0'..'9']
-
-genMaybe :: Gen a -> Gen (Maybe a)
-genMaybe gen = oneof [pure Nothing, Just <$> gen]
 
 genEnumBounded :: (Enum a, Bounded a) => Gen a
 genEnumBounded = elements [minBound..]
